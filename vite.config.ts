@@ -17,9 +17,9 @@ export default defineConfig({
       includeAssets: ['apple-touch-icon.png'],
       manifest: {
         id: './',
-        name: 'App Ila',
-        short_name: 'App Ila',
-        description: 'Note offline con database locale sul dispositivo.',
+        name: 'Ore veterinarie',
+        short_name: 'Ore vet',
+        description: 'Registra le ore lavorate e consulta i compensi maturati.',
         lang: 'it',
         start_url: './',
         scope: './',
