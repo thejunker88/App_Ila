@@ -115,6 +115,30 @@ export function formatMoney(cents: number): string {
   return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(cents / 100);
 }
 
+export function parseHours(value: string): number {
+  const normalized = value.trim().replace(',', '.');
+  if (!/^(?:0|[1-9]\d*)(?:\.0|\.5)?$/.test(normalized)) {
+    throw new Error('Inserisci un numero di ore intero o con mezze ore, ad esempio 3 oppure 3,5.');
+  }
+  const hours = Number(normalized);
+  if (!Number.isSafeInteger(hours * 2) || hours < 0.5) {
+    throw new Error('Le ore devono essere almeno 0,5 e aumentare a intervalli di mezz’ora.');
+  }
+  return hours;
+}
+
+export function formatHours(hours: number): string {
+  return new Intl.NumberFormat('it-IT', { maximumFractionDigits: 1 }).format(hours);
+}
+
+export function calculateAmountCents(hours: number, hourlyRateCents: number): number {
+  const amountCents = Math.round(hours * hourlyRateCents);
+  if (!Number.isSafeInteger(amountCents)) {
+    throw new Error('Il compenso supera il limite numerico supportato.');
+  }
+  return amountCents;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -161,10 +185,13 @@ function findTariff(periods: TariffPeriod[], clinicId: string, date: string): Ta
 }
 
 function validateWorkInput(input: WorkEntryInput): void {
-  if (!isId(input.clinicId) || !isDate(input.date) || input.date > todayDate() ||
-    !Number.isSafeInteger(input.hours) || input.hours < 1 ||
+  if (!isId(input.clinicId) || !isDate(input.date) ||
+    !Number.isSafeInteger(input.hours * 2) || input.hours < 0.5 ||
     typeof input.notes !== 'string' || input.notes.length > MAX_NOTES_LENGTH) {
-    throw new Error('Data, ore o note non valide. Le ore devono essere un intero positivo e la data non futura.');
+    throw new Error('Data, ore o note non valide. Le ore devono essere almeno 0,5 e aumentare a intervalli di mezz’ora.');
+  }
+  if (input.date > todayDate()) {
+    throw new Error('La data della registrazione non può essere futura.');
   }
 }
 
@@ -255,13 +282,10 @@ export async function updateTariffPeriod(
         if (!tariff) {
           throw new Error(`Non esiste una tariffa per il ${formatDate(entry.date)}. Correggi i periodi prima di ricalcolare.`);
         }
-        if (!Number.isSafeInteger(entry.hours * tariff.hourlyRateCents)) {
-          throw new Error('Il compenso supera il limite numerico supportato.');
-        }
         await database.workEntries.update(entry.id, {
           tariffPeriodId: tariff.id,
           hourlyRateCents: tariff.hourlyRateCents,
-          amountCents: entry.hours * tariff.hourlyRateCents,
+          amountCents: calculateAmountCents(entry.hours, tariff.hourlyRateCents),
           updatedAt: new Date().toISOString(),
         });
       }
@@ -299,16 +323,13 @@ export async function addWorkEntry(input: WorkEntryInput, database = db): Promis
     const periods = await database.tariffPeriods.where('clinicId').equals(input.clinicId).toArray();
     const tariff = findTariff(periods, input.clinicId, input.date);
     if (!tariff) throw new Error('Nessuna tariffa configurata per questo studio e questa data.');
-    if (!Number.isSafeInteger(input.hours * tariff.hourlyRateCents)) {
-      throw new Error('Il compenso supera il limite numerico supportato.');
-    }
     const now = new Date().toISOString();
     const entry: WorkEntry = {
       id: crypto.randomUUID(),
       ...input,
       tariffPeriodId: tariff.id,
       hourlyRateCents: tariff.hourlyRateCents,
-      amountCents: input.hours * tariff.hourlyRateCents,
+      amountCents: calculateAmountCents(input.hours, tariff.hourlyRateCents),
       createdAt: now,
       updatedAt: now,
     };
@@ -348,15 +369,12 @@ export async function updateWorkEntry(
       throw new Error('Nessuna tariffa configurata per il nuovo studio e la nuova data.');
     }
     const hourlyRateCents = tariff?.hourlyRateCents ?? previous.hourlyRateCents;
-    if (!Number.isSafeInteger(input.hours * hourlyRateCents)) {
-      throw new Error('Il compenso supera il limite numerico supportato.');
-    }
     await database.workEntries.put({
       ...previous,
       ...input,
       tariffPeriodId: tariff?.id ?? previous.tariffPeriodId,
       hourlyRateCents,
-      amountCents: input.hours * hourlyRateCents,
+      amountCents: calculateAmountCents(input.hours, hourlyRateCents),
       updatedAt: new Date().toISOString(),
     });
   });
@@ -473,12 +491,12 @@ function parseWorkEntry(value: unknown): WorkEntry {
   if (!isRecord(value) ||
     !isId(value.id) || !isId(value.clinicId) || !isId(value.tariffPeriodId) ||
     !isDate(value.date) || value.date > todayDate() ||
-    !Number.isSafeInteger(value.hours) || (value.hours as number) < 1 ||
+    !Number.isSafeInteger((value.hours as number) * 2) || (value.hours as number) < 0.5 ||
     typeof value.notes !== 'string' || value.notes.length > MAX_NOTES_LENGTH ||
     !Number.isSafeInteger(value.hourlyRateCents) || (value.hourlyRateCents as number) <= 0 ||
     !Number.isSafeInteger(value.amountCents) ||
-    !Number.isSafeInteger((value.hours as number) * (value.hourlyRateCents as number)) ||
-    value.amountCents !== (value.hours as number) * (value.hourlyRateCents as number) ||
+    !Number.isSafeInteger(Math.round((value.hours as number) * (value.hourlyRateCents as number))) ||
+    value.amountCents !== Math.round((value.hours as number) * (value.hourlyRateCents as number)) ||
     !isTimestamp(value.createdAt) || !isTimestamp(value.updatedAt)) {
     throw new Error('Il backup contiene registrazioni non valide.');
   }

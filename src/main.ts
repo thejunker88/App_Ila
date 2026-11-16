@@ -5,15 +5,18 @@ import {
   addTariffPeriod,
   addWorkEntry,
   archiveClinic,
+  calculateAmountCents,
   createBackup,
   currentMonth,
   db,
   deleteTariffPeriod,
   deleteWorkEntry,
+  formatHours,
   formatMoney,
   getMonthlySummary,
   getTariffForDate,
   parseBackup,
+  parseHours,
   parseHourlyRate,
   restoreBackup,
   todayDate,
@@ -101,7 +104,7 @@ function monthLabel(value: string): string {
 }
 
 function hoursLabel(hours: number): string {
-  return `${hours} ${hours === 1 ? 'ora' : 'ore'}`;
+  return `${formatHours(hours)} ${hours === 1 ? 'ora' : 'ore'}`;
 }
 
 const error = element<HTMLParagraphElement>('error');
@@ -258,9 +261,9 @@ async function renderEntries(): Promise<void> {
           <label for="work-date">Data (GG/MM/AAAA)</label>
           <input id="work-date" name="date" type="text" inputmode="numeric" placeholder="GG/MM/AAAA"
             maxlength="10" value="${formatDate(edit?.date ?? todayDate())}" required />
-          <label for="work-hours">Ore intere</label>
-          <input id="work-hours" name="hours" type="number" min="1" step="1" inputmode="numeric"
-            value="${edit?.hours ?? 1}" required />
+          <label for="work-hours">Ore lavorate</label>
+          <input id="work-hours" name="hours" type="text" inputmode="decimal" placeholder="es. 3,5"
+            value="${edit ? formatHours(edit.hours) : '1'}" required />
           <label for="work-notes">Nota <span class="optional">(facoltativa)</span></label>
           <textarea id="work-notes" name="notes" rows="2" maxlength="10000">${escapeHtml(edit?.notes ?? '')}</textarea>
           <p id="work-preview" class="preview" aria-live="polite"></p>
@@ -339,9 +342,16 @@ function bindWorkForm(form: HTMLFormElement): void {
 
   const updatePreview = (): void => {
     void (async () => {
-      const hours = Number(hoursInput.value);
-      if (!clinicInput.value || !dateInput.validity.valid || !Number.isSafeInteger(hours) || hours < 1) {
-        preview.textContent = 'Inserisci studio, data in formato GG/MM/AAAA e un numero intero positivo di ore.';
+      let hours: number;
+      try {
+        hours = parseHours(hoursInput.value);
+      } catch {
+        preview.textContent = 'Inserisci le ore come numero intero o a mezze ore, ad esempio 3 oppure 3,5.';
+        preview.className = 'preview hint';
+        return;
+      }
+      if (!clinicInput.value || !dateInput.validity.valid) {
+        preview.textContent = 'Inserisci studio e una data valida in formato GG/MM/AAAA.';
         preview.className = 'preview hint';
         return;
       }
@@ -359,7 +369,7 @@ function bindWorkForm(form: HTMLFormElement): void {
         preview.className = 'preview warning';
         return;
       }
-      preview.textContent = `Tariffa applicata: ${formatMoney(hourlyRateCents)}/ora · Compenso: ${formatMoney(hours * hourlyRateCents)}` +
+      preview.textContent = `Tariffa applicata: ${formatMoney(hourlyRateCents)}/ora · Compenso: ${formatMoney(calculateAmountCents(hours, hourlyRateCents))}` +
         `${historicalRateCents !== undefined ? ' (importo storico)' : ''}`;
       preview.className = 'preview success';
     })().catch(reportError);
@@ -375,7 +385,7 @@ function bindWorkForm(form: HTMLFormElement): void {
       const input: WorkEntryInput = {
         clinicId: clinicInput.value,
         date: parseDate(dateInput.value),
-        hours: Number(hoursInput.value),
+        hours: parseHours(hoursInput.value),
         notes: element<HTMLTextAreaElement>('work-notes').value,
       };
       if (editingEntryId) {

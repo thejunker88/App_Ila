@@ -29,7 +29,7 @@ indirizzo HTTPS e aggiunta alla schermata Home da Safari.
 - **Riepilogo:** totale maturato nel mese corrente fino a oggi; per i mesi
   precedenti, riepilogo dell'intero mese. Mostra ore e importi per studio.
 - **Registro ore:** una registrazione al giorno per studio, con data passata o
-  odierna, numero intero positivo di ore e nota facoltativa.
+  odierna, ore a intervalli di mezz'ora (ad esempio `3` o `3,5`) e nota facoltativa.
   Le registrazioni si possono modificare o eliminare con conferma.
 - **Date:** visualizzate e inserite come GG/MM/AAAA, anche nei periodi tariffari.
   Sulla tastiera numerica si possono digitare otto cifre (es. `14112026`):
@@ -54,7 +54,8 @@ indirizzo HTTPS e aggiunta alla schermata Home da Safari.
 
 Gli importi rappresentano compensi maturati, non fatture o pagamenti. Non sono
 incluse IVA, imposte, rimborsi, straordinari o tariffe speciali. Nello stesso
-giorno si possono registrare piu studi.
+giorno si possono registrare piu studi. Gli importi sono arrotondati al centesimo
+per registrazione.
 
 ## Icona dell'app
 

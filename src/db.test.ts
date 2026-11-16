@@ -8,11 +8,14 @@ import {
   addWorkEntry,
   archiveClinic,
   AppDatabase,
+  calculateAmountCents,
   createBackup,
   currentMonth,
+  formatHours,
   getMonthlySummary,
   getTariffForDate,
   parseBackup,
+  parseHours,
   parseHourlyRate,
   restoreBackup,
   todayDate,
@@ -195,6 +198,41 @@ describe('studi e periodi tariffari', () => {
 });
 
 describe('registrazioni e compensi', () => {
+  it('accetta mezze ore, mostra la virgola italiana e arrotonda il compenso della registrazione al centesimo', async () => {
+    expect(parseHours('3,5')).toBe(3.5);
+    expect(parseHours('3.5')).toBe(3.5);
+    expect(parseHours('0,5')).toBe(0.5);
+    expect(parseHours('3,0')).toBe(3);
+    expect(formatHours(3.5)).toBe('3,5');
+    expect(formatHours(3)).toBe('3');
+    expect(calculateAmountCents(0.5, 3001)).toBe(1501);
+    expect(calculateAmountCents(3.5, 3001)).toBe(10504);
+    for (const invalid of ['', '0', '0,25', '3,25', '3,75', '-0,5', '3,5 ore']) {
+      expect(() => parseHours(invalid)).toThrow();
+    }
+
+    const clinic = await addClinic('Studio Mezzore', '', database);
+    await addTariffPeriod({
+      clinicId: clinic.id,
+      validFrom: '2020-01-01',
+      validTo: null,
+      hourlyRateCents: 3001,
+    }, database);
+    const entry = await addWorkEntry({
+      clinicId: clinic.id,
+      date: todayDate(),
+      hours: parseHours('3,5'),
+      notes: '',
+    }, database);
+    expect(entry).toMatchObject({ hours: 3.5, amountCents: 10504 });
+    await expect(addWorkEntry({
+      clinicId: clinic.id,
+      date: todayDate(),
+      hours: 3.25,
+      notes: '',
+    }, database)).rejects.toThrow('mezz’ora');
+  });
+
   it('applica la tariffa in base alla data, salva lo snapshot e aggiorna il totale mensile', async () => {
     const clinicA = await addClinic('Studio A', '', database);
     const clinicB = await addClinic('Studio B', '', database);
@@ -211,7 +249,7 @@ describe('registrazioni e compensi', () => {
       date: '2999-01-01',
       hours: 1,
       notes: '',
-    }, database)).rejects.toThrow('non futura');
+    }, database)).rejects.toThrow('non può essere futura');
 
     const summary = await getMonthlySummary(currentMonth(), database);
     expect(summary.totalHours).toBe(10);
@@ -237,11 +275,11 @@ describe('registrazioni e compensi', () => {
     await updateTariffPeriod(tariff.id, changedTariff, false, database);
     expect(await database.workEntries.get(entry.id)).toMatchObject({ hourlyRateCents: 3000, amountCents: 15000 });
 
-    await updateWorkEntry(entry.id, { clinicId: clinic.id, date: entry.date, hours: 6, notes: 'Corretto' }, database);
-    expect(await database.workEntries.get(entry.id)).toMatchObject({ hourlyRateCents: 3000, amountCents: 18000 });
+    await updateWorkEntry(entry.id, { clinicId: clinic.id, date: entry.date, hours: 3.5, notes: 'Corretto' }, database);
+    expect(await database.workEntries.get(entry.id)).toMatchObject({ hours: 3.5, hourlyRateCents: 3000, amountCents: 10500 });
 
     await updateTariffPeriod(tariff.id, changedTariff, true, database);
-    expect(await database.workEntries.get(entry.id)).toMatchObject({ hourlyRateCents: 4000, amountCents: 24000 });
+    expect(await database.workEntries.get(entry.id)).toMatchObject({ hours: 3.5, hourlyRateCents: 4000, amountCents: 14000 });
   });
 
   it('annulla il ricalcolo se la modifica lascia una registrazione senza tariffa', async () => {
